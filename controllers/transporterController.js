@@ -1,4 +1,6 @@
+import XLSX from 'xlsx';
 import {
+  bulkCreateTransporters,
   fetchAllTransporters,
   fetchTransporterById,
   searchTransporters,
@@ -71,8 +73,27 @@ export async function getTransporterById(req, res, next) {
 
 export async function createTransporterController(req, res, next) {
   try {
-    const transporter = await createTransporter(req.body);
+    const transporter = await createTransporter(req.body, {
+      allowDuplicatePhone: Boolean(req.body.allowDuplicatePhone),
+    });
     res.status(201).json(transporter);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function bulkImportTransportersController(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Please upload a transporter file.' });
+    }
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+    const result = await bulkCreateTransporters(rows);
+
+    res.status(200).json(result);
   } catch (error) {
     next(error);
   }

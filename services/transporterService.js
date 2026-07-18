@@ -8,9 +8,11 @@ import {
   findFeaturedTransporters,
   findRecentTransporters,
   findTransporterById,
+  findTransporterByPhone,
   findTransportersByRoute,
   updateTransporterRecord,
 } from '../repositories/transporterRepository.js';
+import { buildTransporterPayload } from '../utils/transporterImport.js';
 
 function normalizeTransporter(transporter) {
   if (!transporter) return null;
@@ -41,8 +43,80 @@ export async function getFeaturedTransporters() {
   return normalizeTransporters(await findFeaturedTransporters());
 }
 
-export async function createTransporter(data) {
-  return normalizeTransporter((await createTransporterRecord(data)).toObject());
+function normalizePhone(value) {
+  return String(value ?? '')
+    .split(',')
+    .map((part) => part.replace(/\D/g, '').trim())
+    .filter(Boolean)
+    .join(',');
+}
+
+function normalizePayload(data) {
+  const phone = normalizePhone(data.phone || data.mobile || data.phoneNumber || '');
+  const whatsapp = normalizePhone(data.whatsapp || data.whatsApp || data.whatsappNumber || phone);
+
+  return {
+    ...data,
+    phone,
+    whatsapp,
+  };
+}
+
+export async function createTransporter(data, { allowDuplicatePhone = false } = {}) {
+  const payload = normalizePayload(data);
+
+  if (payload.phone && !allowDuplicatePhone) {
+    const existingTransporter = await findTransporterByPhone(payload.phone);
+    if (existingTransporter) {
+      const error = new Error('Mobile number already exists. Choose to add again if you want to proceed.');
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
+  return normalizeTransporter((await createTransporterRecord(payload)).toObject());
+}
+
+export async function bulkCreateTransporters(rows = []) {
+  const created = [];
+  const duplicates = [];
+  const seenPhones = new Set();
+
+  for (const [index, row] of rows.entries()) {
+    const payload = buildTransporterPayload(row);
+    const phone = payload.phone;
+    const phoneTokens = String(phone || '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const duplicatePhone = Boolean(
+      phoneTokens.length &&
+        (phoneTokens.some((token) => seenPhones.has(token)) || (await Promise.all(phoneTokens.map((token) => findTransporterByPhone(token)))).some(Boolean))
+    );
+
+    if (duplicatePhone) {
+      duplicates.push({
+        rowNumber: index + 2,
+        companyName: payload.companyName || `Row ${index + 2}`,
+        phone,
+      });
+      continue;
+    }
+
+    if (phone) {
+      phoneTokens.forEach((token) => seenPhones.add(token));
+    }
+
+    const createdTransporter = await createTransporter(payload, { allowDuplicatePhone: true });
+    created.push(createdTransporter);
+  }
+
+  return {
+    createdCount: created.length,
+    duplicateCount: duplicates.length,
+    created,
+    duplicates,
+  };
 }
 
 export async function updateTransporter(id, data) {

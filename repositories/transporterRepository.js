@@ -39,6 +39,21 @@ export function createTransporterRecord(data) {
   return Transporter.create(data);
 }
 
+export function findTransporterByPhone(phone) {
+  if (!phone) return null;
+
+  const tokens = String(phone)
+    .split(',')
+    .map((part) => part.replace(/\D/g, '').trim())
+    .filter(Boolean);
+
+  if (!tokens.length) return null;
+
+  return Transporter.findOne({
+    $or: tokens.map((token) => ({ phone: { $regex: new RegExp(`(^|,)${escapeRegex(token)}(,|$)`) } })),
+  }).lean();
+}
+
 export function updateTransporterRecord(id, data) {
   if (!isValidObjectId(id)) return null;
   return Transporter.findByIdAndUpdate(id, data, { new: true, runValidators: true }).lean();

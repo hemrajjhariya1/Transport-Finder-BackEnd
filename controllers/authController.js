@@ -1,4 +1,4 @@
-import { loginAdmin } from '../services/authService.js';
+import { loginAdmin, verifyToken } from '../services/authService.js';
 
 export async function login(req, res, next) {
   try {
@@ -17,4 +17,19 @@ export async function login(req, res, next) {
   } catch (error) {
     next(error);
   }
+}
+
+export function me(req, res) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Admin authorization required.' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const payload = verifyToken(token);
+  if (!payload || payload.role !== 'admin') {
+    return res.status(403).json({ error: 'Invalid admin token.' });
+  }
+
+  res.json({ valid: true, admin: { username: payload.username } });
 }
